@@ -1,5 +1,9 @@
 import numpy as np
 import cv2
+from geometry_msgs.msg import PointStamped
+from tf2_geometry_msgs import do_transform_point
+from tf2_ros import Buffer, TransformListener, TransformException
+from rclpy.time import Time
 
 def depth_to_numpy(image):
     if image.encoding != '32FC1':
@@ -88,3 +92,30 @@ def pixel_to_camera(marker, camera_info):
     y = (v - cy) * z / fy
 
     return x, y, z
+
+def camera_to_base(camera_point, tf_buffer, stamp):
+    if camera_point is None:
+        return None
+
+    x, y, z = camera_point
+
+    point = PointStamped()
+    point.header.frame_id = 'camera_optical_frame'
+    point.header.stamp = stamp
+
+    point.point.x = float(x)
+    point.point.y = float(y)
+    point.point.z = float(z)
+
+    try:
+        transform = tf_buffer.lookup_transform(
+            'base_link',
+            'camera_optical_frame',
+            Time.from_msg(stamp)
+        )
+
+        return do_transform_point(point, transform)
+
+    except TransformException as ex:
+        print(f"Transformation unavailable: {ex}")
+        return None

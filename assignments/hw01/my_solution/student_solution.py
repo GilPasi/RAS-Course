@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """Run after launching HW1: receive RGB images and move to one fixed point."""
 import time
-from typing import Any
-
 import rclpy
 from geometry_msgs.msg import PointStamped
-from numpy import ndarray
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, CameraInfo
@@ -15,16 +12,15 @@ from message_filters import Subscriber, ApproximateTimeSynchronizer
 
 from hw01_sim.arm_client import ArmClient
 
-import numpy as np
-
-from utils import (depth_to_numpy, rgb_to_numpy,
-                   detect_marker, pixel_to_camera)
+from utils import *
 
 
 def main():
     rclpy.init()
     node = Node('solution_hw1')
     arm = ArmClient(node)
+    tf_buffer = Buffer()
+    tf_listener = TransformListener(tf_buffer, node)
     last_frame_received = None
     marker_position = None
     camera_info = None
@@ -39,20 +35,21 @@ def main():
         def is_first_prepared_frame():
             nonlocal camera_info
             nonlocal last_frame_received
+            can_transform = tf_buffer.can_transform('base_link', 'camera_optical_frame', Time())
             # We want the first frame with updated camera info
-            return last_frame_received is None and camera_info is not None
+            return marker_position is None and camera_info is not None and can_transform
 
-        rgb_matrix = rgb_to_numpy(rgb_msg)
-        depth_matrix = depth_to_numpy(depth_msg)
         nonlocal last_frame_received
+        last_frame_received = time.monotonic()
 
         if is_first_prepared_frame():
-            on_first_sync(depth_matrix, rgb_matrix)
+            stamp = rgb_msg.header.stamp
+            rgb_matrix = rgb_to_numpy(rgb_msg)
+            depth_matrix = depth_to_numpy(depth_msg)
+            on_first_sync(depth_matrix, rgb_matrix, stamp)
 
-    def on_first_sync(depth_matrix: ndarray[Any, Any], rgb_matrix: ndarray[Any, Any] | ndarray[Any, Any]):
-        nonlocal last_frame_received
+    def on_first_sync(depth_matrix, rgb_matrix, stamp):
         nonlocal marker_position
-        last_frame_received = time.monotonic()
         print("Synchronized images received!")
         print("RGB shape:", rgb_matrix.shape)
         print("Depth shape:", depth_matrix.shape)
@@ -62,10 +59,12 @@ def main():
             return
         print("Marker position:", marker_position)
         nonlocal camera_info
+        #TODO: add to the report the convertion method
         marker_position = pixel_to_camera(marker_position, camera_info)
         print("Calibrated marker position:", marker_position)
-
-
+        nonlocal tf_buffer
+        marker_position = camera_to_base(marker_position, tf_buffer, stamp).point
+        print("Transformed marker position:", marker_position)
 
     rgb_sub = Subscriber(
         node, Image, '/camera/image_raw',
