@@ -1,30 +1,36 @@
+
 import numpy as np
 import cv2
+
 from geometry_msgs.msg import PointStamped
 from tf2_geometry_msgs import do_transform_point
-from tf2_ros import Buffer, TransformListener, TransformException
+from tf2_ros import TransformException
 from rclpy.time import Time
 
+
+# -------------------- Image Conversion --------------------
+
 def depth_to_numpy(image):
+    """Convert a ROS 32FC1 depth image into a 2D NumPy array."""
     if image.encoding != '32FC1':
-        raise ValueError(f"Unsupported encoding: {image.encoding}")
+        raise ValueError(f"Unsupported depth encoding: {image.encoding}")
 
     dtype = np.dtype('float32').newbyteorder(
         '>' if image.is_bigendian else '<'
     )
 
-    depth = np.ndarray(
+    return np.ndarray(
         shape=(image.height, image.width),
         dtype=dtype,
         buffer=image.data,
         strides=(image.step, 4)
-    )
+    ).copy()
 
-    return depth.copy()
 
 def rgb_to_numpy(image):
+    """Convert a ROS RGB/BGR image into an RGB NumPy array."""
     if image.encoding not in ('rgb8', 'bgr8'):
-        raise ValueError(f"Unsupported encoding: {image.encoding}")
+        raise ValueError(f"Unsupported RGB encoding: {image.encoding}")
 
     rgb = np.ndarray(
         shape=(image.height, image.width, 3),
@@ -38,20 +44,27 @@ def rgb_to_numpy(image):
 
     return rgb.copy()
 
+
+# -------------------- Marker Detection --------------------
+
 def detect_marker(rgb_matrix, depth_matrix):
-    # Convert RGB to HSV
+    """Find the largest red marker and estimate its median depth."""
+
+    if rgb_matrix.shape[:2] != depth_matrix.shape:
+        raise ValueError("RGB and depth image dimensions do not match")
+
     hsv = cv2.cvtColor(rgb_matrix, cv2.COLOR_RGB2HSV)
 
-    # Example: detect a red marker
-    mask1 = cv2.inRange(hsv, (0, 100, 70), (10, 255, 255))
-    mask2 = cv2.inRange(hsv, (170, 100, 70), (179, 255, 255))
-    mask = mask1 | mask2
+    # Red occupies two regions in HSV hue space.
+    mask = (
+        cv2.inRange(hsv, (0, 100, 70), (10, 255, 255))
+        | cv2.inRange(hsv, (170, 100, 70), (179, 255, 255))
+    )
 
-    # Remove small noise
-    kernel = np.ones((3, 3), np.uint8)
+    # Remove isolated noisy pixels.
+    kernel = np.ones((3, 3), dtype=np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
-    # Find connected components
     count, labels, stats, centroids = cv2.connectedComponentsWithStats(
         mask, connectivity=8
     )
@@ -59,25 +72,41 @@ def detect_marker(rgb_matrix, depth_matrix):
     if count <= 1:
         return None
 
-    # Largest detected component
-    marker_id = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+    # Ignore the background and very small components.
+    min_area = 10
+    candidates = np.where(
+        stats[1:, cv2.CC_STAT_AREA] >= min_area
+    )[0]
 
-    # Marker centroid in image coordinates
-    x, y = centroids[marker_id]
+    if candidates.size == 0:
+        return None
 
-    # Find valid depths inside marker region
-    marker_pixels = labels == marker_id
-    valid = marker_pixels & np.isfinite(depth_matrix) & (depth_matrix > 0)
+    marker_id = 1 + candidates[
+        np.argmax(stats[1 + candidates, cv2.CC_STAT_AREA])
+    ]
+
+    u, v = centroids[marker_id]
+
+    # Use only valid depths belonging to the marker.
+    marker_mask = labels == marker_id
+    valid = (
+        marker_mask
+        & np.isfinite(depth_matrix)
+        & (depth_matrix > 0)
+    )
 
     if not np.any(valid):
         return None
 
-    # Robust depth estimate
-    z = np.median(depth_matrix[valid])
+    z = float(np.median(depth_matrix[valid]))
 
-    return x, y, z
+    return float(u), float(v), z
+
+
+# -------------------- Coordinate Conversion --------------------
 
 def pixel_to_camera(marker, camera_info):
+    """Convert pixel coordinates and depth to camera optical coordinates."""
     if marker is None:
         return None
 
@@ -88,24 +117,27 @@ def pixel_to_camera(marker, camera_info):
     cx = camera_info.k[2]
     cy = camera_info.k[5]
 
+    if fx <= 0 or fy <= 0:
+        raise ValueError("Invalid camera focal lengths")
+
     x = (u - cx) * z / fx
     y = (v - cy) * z / fy
 
-    return x, y, z
+    return float(x), float(y), float(z)
+
 
 def camera_to_base(camera_point, tf_buffer, stamp):
+    """Transform a camera optical point into base_link coordinates."""
     if camera_point is None:
         return None
-
-    x, y, z = camera_point
 
     point = PointStamped()
     point.header.frame_id = 'camera_optical_frame'
     point.header.stamp = stamp
 
-    point.point.x = float(x)
-    point.point.y = float(y)
-    point.point.z = float(z)
+    point.point.x, point.point.y, point.point.z = map(
+        float, camera_point
+    )
 
     try:
         transform = tf_buffer.lookup_transform(
@@ -117,16 +149,24 @@ def camera_to_base(camera_point, tf_buffer, stamp):
         return do_transform_point(point, transform)
 
     except TransformException as ex:
-        print(f"Transformation unavailable: {ex}")
+        print(f"[DEBUG] Transformation unavailable: {ex}")
         return None
 
-def elevate_point(stamped_point):
-    ELEVATE_FACTOR = 0.08
-    elevated_point =  PointStamped()
-    elevated_point.point.x = stamped_point.point.x
-    elevated_point.point.y = stamped_point.point.y
-    elevated_point.point.z = stamped_point.point.z + ELEVATE_FACTOR
-    elevated_point.header.stamp = stamped_point.header.stamp
-    elevated_point.header.frame_id = 'base_link'
-    return elevated_point
 
+# -------------------- Target Adjustment --------------------
+
+def elevate_point(stamped_point, height=0.08):
+    """Raise a target along the base_link Z-axis."""
+    if stamped_point is None:
+        return None
+
+    elevated = PointStamped()
+
+    # Preserve the original coordinate frame and timestamp.
+    elevated.header = stamped_point.header
+
+    elevated.point.x = stamped_point.point.x
+    elevated.point.y = stamped_point.point.y
+    elevated.point.z = stamped_point.point.z + height
+
+    return elevated
