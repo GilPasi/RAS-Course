@@ -20,7 +20,7 @@ def main():
     node = Node('solution_hw1')
     arm = ArmClient(node)
     tf_buffer = Buffer()
-    tf_listener = TransformListener(tf_buffer, node)
+    TransformListener(tf_buffer, node)
     last_frame_received = None
     marker_position = None
     camera_info = None
@@ -63,8 +63,11 @@ def main():
         marker_position = pixel_to_camera(marker_position, camera_info)
         print("Calibrated marker position:", marker_position)
         nonlocal tf_buffer
-        marker_position = camera_to_base(marker_position, tf_buffer, stamp).point
-        print("Transformed marker position:", marker_position)
+        marker_position = camera_to_base(marker_position, tf_buffer, stamp)
+        print("Transformed marker position:", marker_position.point)
+        marker_position = elevate_point(marker_position)
+        print("Elevated marker position:", marker_position.point)
+
 
     rgb_sub = Subscriber(
         node, Image, '/camera/image_raw',
@@ -101,7 +104,7 @@ def main():
                 point.header.frame_id = 'base_link'
                 point.point.x, point.point.y, point.point.z = 0.20, -0.20, 0.14
                 if arm.ready():
-                    motion = arm.move_to_point(point)
+                    motion = arm.move_to_point(marker_position)
                 else:
                     motion = None
                     print("Arm is not ready yet")

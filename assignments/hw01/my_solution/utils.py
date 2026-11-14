@@ -119,3 +119,14 @@ def camera_to_base(camera_point, tf_buffer, stamp):
     except TransformException as ex:
         print(f"Transformation unavailable: {ex}")
         return None
+
+def elevate_point(stamped_point):
+    ELEVATE_FACTOR = 0.08
+    elevated_point =  PointStamped()
+    elevated_point.point.x = stamped_point.point.x
+    elevated_point.point.y = stamped_point.point.y
+    elevated_point.point.z = stamped_point.point.z + ELEVATE_FACTOR
+    elevated_point.header.stamp = stamped_point.header.stamp
+    elevated_point.header.frame_id = 'base_link'
+    return elevated_point
+
