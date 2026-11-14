@@ -6,6 +6,7 @@ from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
 
+from geometry_msgs.msg import PointStamped
 from sensor_msgs.msg import Image, CameraInfo
 from tf2_ros import Buffer, TransformListener
 from message_filters import Subscriber, ApproximateTimeSynchronizer
@@ -30,9 +31,18 @@ def main():
     tf_buffer = Buffer()
     tf_listener = TransformListener(tf_buffer, node)
 
+    target_camera_pub = node.create_publisher(
+        PointStamped, '/hw01/target_camera', 10
+    )
+
+    target_base_pub = node.create_publisher(
+        PointStamped, '/hw01/target_base', 10
+    )
+
     camera_info = None
     marker_position = None
     last_frame_received = None
+    pending_target = None
 
     def on_camera_info(info):
         nonlocal camera_info
@@ -73,20 +83,39 @@ def main():
         print(f"[DEBUG] Marker pixel and depth: {marker}")
 
         camera_point = pixel_to_camera(marker, camera_info)
-        print(f"[DEBUG] Camera coordinates: {camera_point}")
 
+        # Publish marker position in camera coordinates.
+        camera_msg = PointStamped()
+        camera_msg.header.frame_id = 'camera_optical_frame'
+        camera_msg.header.stamp = stamp
+        camera_msg.point.x, camera_msg.point.y, camera_msg.point.z = map(
+            float, camera_point
+        )
+
+        target_camera_pub.publish(camera_msg)
+        print(f"[DEBUG] Published camera target: {camera_msg.point}")
+
+        # Transform to base_link.
         base_point = camera_to_base(camera_point, tf_buffer, stamp)
 
         if base_point is None:
             print("[DEBUG] Transformation failed, retrying...")
             return
 
-        print(f"[DEBUG] Base coordinates: {base_point.point}")
+        # Publish the transformed position BEFORE adding the hover offset.
+        target_base_pub.publish(base_point)
+        print(f"[DEBUG] Published base target: {base_point.point}")
 
-        marker_position = elevate_point(base_point)
 
-        print(f"[DEBUG] Target position: {marker_position.point}")
-        print(f"[DEBUG] Target frame: {marker_position.header.frame_id}")
+    def on_target_base(msg):
+        nonlocal pending_target
+
+        if msg.header.frame_id != 'base_link':
+            print(f"[DEBUG] Unexpected frame: {msg.header.frame_id}")
+            return
+
+        pending_target = elevate_point(msg)
+        print(f"[DEBUG] Received target: {pending_target.point}")
 
     # Subscriptions
     rgb_sub = Subscriber(
@@ -105,6 +134,12 @@ def main():
     )
     info_sub.registerCallback(on_camera_info)
 
+    target_sub = Subscriber(
+        node, PointStamped, '/hw01/target_base'
+    )
+
+    target_sub.registerCallback(on_target_base)
+
     sync = ApproximateTimeSynchronizer(
         [rgb_sub, depth_sub],
         queue_size=10,
@@ -114,32 +149,39 @@ def main():
 
     motion = None
     deadline = time.monotonic() + 100.0
-
     try:
         while rclpy.ok() and time.monotonic() < deadline:
             rclpy.spin_once(node, timeout_sec=0.1)
 
-            if motion is None and marker_position is not None and arm.ready():
+            if motion is None and pending_target is not None and arm.ready():
                 print("[DEBUG] Sending movement command")
-                motion = arm.move_to_point(marker_position)
+                motion = arm.move_to_point(pending_target)
+                pending_target = None
 
             if motion is not None and motion.done():
                 break
 
         image_ok = (
-            last_frame_received is not None
-            and time.monotonic() - last_frame_received < 2.0
+                last_frame_received is not None
+                and time.monotonic() - last_frame_received < 2.0
         )
 
         motion_ok = (
-            motion is not None
-            and motion.done()
-            and motion.result().success
+                motion is not None
+                and motion.done()
+                and motion.result().success
         )
 
         print(f'{"PASS" if image_ok else "FAIL"}: fresh camera image reception')
         print(f'{"PASS" if motion_ok else "FAIL"}: marker-target arm movement')
 
+        if motion is not None and motion.done():
+            print(motion.result().message)
+
+        return 0 if image_ok and motion_ok else 1
+
+    except KeyboardInterrupt:
+        return 1
         if motion is not None and motion.done():
             print(motion.result().message)
 
