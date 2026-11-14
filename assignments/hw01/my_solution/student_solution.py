@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Run after launching HW1: receive RGB images and move to one fixed point."""
 import time
+from typing import Any
 
 import rclpy
 from geometry_msgs.msg import PointStamped
+from numpy import ndarray
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, CameraInfo
@@ -15,7 +17,7 @@ from hw01_sim.arm_client import ArmClient
 
 import numpy as np
 
-from utils import depth_to_numpy, rgb_to_numpy
+from utils import depth_to_numpy, rgb_to_numpy, detect_marker
 
 def main():
     rclpy.init()
@@ -23,6 +25,7 @@ def main():
     arm = ArmClient(node)
     camera_info_received = None
     last_frame_received = None
+    marker_position = None
 
     def on_camera_info(info):
         nonlocal camera_info_received
@@ -35,10 +38,19 @@ def main():
         depth_matrix = depth_to_numpy(depth_msg)
         nonlocal last_frame_received
         if last_frame_received is None:
-            last_frame_received = time.monotonic()
-            print("Synchronized images received!")
-            print("RGB shape:", rgb_matrix.shape)
-            print("Depth shape:", depth_matrix.shape)
+            on_first_sync(depth_matrix, rgb_matrix)
+
+    def on_first_sync(depth_matrix: ndarray[Any, Any], rgb_matrix: ndarray[Any, Any] | ndarray[Any, Any]):
+        nonlocal last_frame_received
+        nonlocal marker_position
+        last_frame_received = time.monotonic()
+        print("Synchronized images received!")
+        print("RGB shape:", rgb_matrix.shape)
+        print("Depth shape:", depth_matrix.shape)
+        marker_position = detect_marker(rgb_matrix, depth_matrix)
+        if marker_position is None:
+            print("Marker is not detected!")
+        print("Marker position:", marker_position)
 
     rgb_sub = Subscriber(
         node, Image, '/camera/image_raw',

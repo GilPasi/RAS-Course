@@ -34,39 +34,41 @@ def rgb_to_numpy(image):
 
     return rgb.copy()
 
-# def detect_marker(depth_matrix, threshold=0.02):
-#     # Ignore invalid depth values
-#     valid = np.isfinite(depth_matrix) & (depth_matrix > 0)
-#
-#     if not np.any(valid):
-#         return None
-#
-#     # Estimate background depth
-#     background = np.median(depth_matrix[valid])
-#
-#     # Replace invalid pixels before filtering
-#     clean = np.where(valid, depth_matrix, background).astype(np.float32)
-#
-#     # Reduce noise
-#     filtered = cv2.medianBlur(clean, 5)
-#
-#     # Identify pixels deviating from background
-#     mask = (
-#         (np.abs(filtered - background) > threshold)
-#         & valid
-#     ).astype(np.uint8)
-#
-#     # Find connected components
-#     count, labels, stats, centroids = (
-#         cv2.connectedComponentsWithStats(mask, connectivity=8)
-#     )
-#
-#     if count <= 1:
-#         return None
-#
-#     # Find largest component, excluding background
-#     marker_id = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
-#
-#     x, y = centroids[marker_id]
-#
-#     return x, y
+def detect_marker(rgb_matrix, depth_matrix):
+    # Convert RGB to HSV
+    hsv = cv2.cvtColor(rgb_matrix, cv2.COLOR_RGB2HSV)
+
+    # Example: detect a red marker
+    mask1 = cv2.inRange(hsv, (0, 100, 70), (10, 255, 255))
+    mask2 = cv2.inRange(hsv, (170, 100, 70), (179, 255, 255))
+    mask = mask1 | mask2
+
+    # Remove small noise
+    kernel = np.ones((3, 3), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+
+    # Find connected components
+    count, labels, stats, centroids = cv2.connectedComponentsWithStats(
+        mask, connectivity=8
+    )
+
+    if count <= 1:
+        return None
+
+    # Largest detected component
+    marker_id = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+
+    # Marker centroid in image coordinates
+    x, y = centroids[marker_id]
+
+    # Find valid depths inside marker region
+    marker_pixels = labels == marker_id
+    valid = marker_pixels & np.isfinite(depth_matrix) & (depth_matrix > 0)
+
+    if not np.any(valid):
+        return None
+
+    # Robust depth estimate
+    z = np.median(depth_matrix[valid])
+
+    return x, y, z
