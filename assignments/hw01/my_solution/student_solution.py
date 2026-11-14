@@ -17,27 +17,36 @@ from hw01_sim.arm_client import ArmClient
 
 import numpy as np
 
-from utils import depth_to_numpy, rgb_to_numpy, detect_marker
+from utils import (depth_to_numpy, rgb_to_numpy,
+                   detect_marker, pixel_to_camera)
+
 
 def main():
     rclpy.init()
     node = Node('solution_hw1')
     arm = ArmClient(node)
-    camera_info_received = None
     last_frame_received = None
     marker_position = None
+    camera_info = None
 
     def on_camera_info(info):
-        nonlocal camera_info_received
-        if camera_info_received is None:
-            # print(f'Camera info: {info}', flush=True)
-            camera_info_received = time.monotonic()
+        nonlocal camera_info
+        if camera_info is None:
+            camera_info = info
+
 
     def on_synchronized(rgb_msg, depth_msg):
+        def is_first_prepared_frame():
+            nonlocal camera_info
+            nonlocal last_frame_received
+            # We want the first frame with updated camera info
+            return last_frame_received is None and camera_info is not None
+
         rgb_matrix = rgb_to_numpy(rgb_msg)
         depth_matrix = depth_to_numpy(depth_msg)
         nonlocal last_frame_received
-        if last_frame_received is None:
+
+        if is_first_prepared_frame():
             on_first_sync(depth_matrix, rgb_matrix)
 
     def on_first_sync(depth_matrix: ndarray[Any, Any], rgb_matrix: ndarray[Any, Any] | ndarray[Any, Any]):
@@ -50,7 +59,13 @@ def main():
         marker_position = detect_marker(rgb_matrix, depth_matrix)
         if marker_position is None:
             print("Marker is not detected!")
+            return
         print("Marker position:", marker_position)
+        nonlocal camera_info
+        marker_position = pixel_to_camera(marker_position, camera_info)
+        print("Calibrated marker position:", marker_position)
+
+
 
     rgb_sub = Subscriber(
         node, Image, '/camera/image_raw',
@@ -66,6 +81,7 @@ def main():
         node, CameraInfo, '/camera/camera_info',
         qos_profile=qos_profile_sensor_data
     )
+    info_sub.registerCallback(on_camera_info)
 
     sync = ApproximateTimeSynchronizer(
         [rgb_sub, depth_sub],

@@ -72,3 +72,19 @@ def detect_marker(rgb_matrix, depth_matrix):
     z = np.median(depth_matrix[valid])
 
     return x, y, z
+
+def pixel_to_camera(marker, camera_info):
+    if marker is None:
+        return None
+
+    u, v, z = marker
+
+    fx = camera_info.k[0]
+    fy = camera_info.k[4]
+    cx = camera_info.k[2]
+    cy = camera_info.k[5]
+
+    x = (u - cx) * z / fx
+    y = (v - cy) * z / fy
+
+    return x, y, z
