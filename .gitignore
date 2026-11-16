@@ -20,6 +20,8 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.idea/
+assignments/hw01/environment/src/hw01_sim/launch/simulation.launch.py
 
 # Generated HW6 editable-install metadata.
 /assignments/hw06/environment/*.egg-info/
