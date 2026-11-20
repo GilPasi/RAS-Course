@@ -5,6 +5,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
+from rclpy.parameter import Parameter
 
 from geometry_msgs.msg import PointStamped
 from sensor_msgs.msg import Image, CameraInfo
@@ -25,7 +26,11 @@ from utils import (
 def main():
     rclpy.init()
 
-    node = Node('solution_hw1')
+    node = Node(
+    'solution_hw1',
+    parameter_overrides=[Parameter('use_sim_time', Parameter.Type.BOOL, True)]
+    )
+    # node = Node('solution_hw1')
     arm = ArmClient(node)
 
     tf_buffer = Buffer()
@@ -40,7 +45,6 @@ def main():
     )
 
     camera_info = None
-    marker_position = None
     last_frame_received = None
     pending_target = None
 
@@ -49,15 +53,20 @@ def main():
         camera_info = info
 
     def on_synchronized(rgb_msg, depth_msg):
-        nonlocal marker_position, last_frame_received
+        nonlocal last_frame_received
 
         last_frame_received = time.monotonic()
 
         # Stop processing after successful detection
-        if marker_position is not None or camera_info is None:
+        if camera_info is None:
             return
 
         stamp = rgb_msg.header.stamp
+
+        frame_age_sec = (node.get_clock().now() - Time.from_msg(stamp)).nanoseconds / 1e9
+        if frame_age_sec > 0.5:
+            print("[DEBUG] frame_age_sec: "+ str(frame_age_sec))
+            return
 
         # Check TF availability at the image timestamp
         if not tf_buffer.can_transform(
@@ -117,6 +126,7 @@ def main():
         pending_target = elevate_point(msg)
         print(f"[DEBUG] Received target: {pending_target.point}")
 
+
     # Subscriptions
     rgb_sub = Subscriber(
         node, Image, '/camera/image_raw',
@@ -137,7 +147,6 @@ def main():
     target_sub = Subscriber(
         node, PointStamped, '/hw01/target_base'
     )
-
     target_sub.registerCallback(on_target_base)
 
     sync = ApproximateTimeSynchronizer(
@@ -147,13 +156,19 @@ def main():
     )
     sync.registerCallback(on_synchronized)
 
+
     motion = None
     deadline = time.monotonic() + 100.0
     try:
         while rclpy.ok() and time.monotonic() < deadline:
             rclpy.spin_once(node, timeout_sec=0.1)
 
-            if motion is None and pending_target is not None and arm.ready():
+
+            has_recent_frame = (
+            last_frame_received is not None
+            and (time.monotonic() - last_frame_received) <= 2.0
+            )
+            if motion is None and pending_target is not None and arm.ready() and has_recent_frame:
                 print("[DEBUG] Sending movement command")
                 motion = arm.move_to_point(pending_target)
                 pending_target = None
@@ -180,12 +195,6 @@ def main():
 
         return 0 if image_ok and motion_ok else 1
 
-    except KeyboardInterrupt:
-        return 1
-        if motion is not None and motion.done():
-            print(motion.result().message)
-
-        return 0 if image_ok and motion_ok else 1
 
     except KeyboardInterrupt:
         return 1
