@@ -71,12 +71,16 @@ def main():
         if not available: return 1
         if math.hypot(pose.x-1, pose.y-3) > .10:
             print('FAIL: restart the simulation at its initial position'); return 1
-        cspace, samples, graph, sink_index, hole_index = probabilistic_roadmap(map, RESOLUTION, sink, hole)
-        route = a_star(graph, samples, sink_index, hole_index)
-        view_configuration_space(map, cspace, samples, RESOLUTION, route)
-        print(samples)
-        print("sink ", sink)
-        print("hole ", hole)
+        try:
+            cspace, samples, graph, sink_index, hole_index = probabilistic_roadmap(map, RESOLUTION, sink, hole)
+            route = a_star(graph, samples, sink_index, hole_index)
+            view_configuration_space(map, cspace, samples, RESOLUTION, route)
+            print("sink ", sink)
+            print("hole ", hole)
+        except RuntimeError as ex:
+            print(f"[ERORR]: {ex}")
+            return 2
+
         physical_points = [grid_to_world(sample) for sample in samples]
 
         for point in route:

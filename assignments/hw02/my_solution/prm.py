@@ -27,6 +27,7 @@ def probabilistic_roadmap(grid, resolution, sink:PoseStamped, hole:PoseStamped, 
     hole_index = 1
 
     graph = _connect_neighbors(samples, cspace, k)
+    _validate_reachability(graph, sink_index, hole_index)
 
     return cspace, samples, graph, sink_index, hole_index
 
@@ -134,3 +135,26 @@ def grid_to_world(point, resolution=0.025,
     y = origin_y + (row + 0.5) * resolution
 
     return x, y
+
+
+def _validate_reachability(graph, sink_index, hole_index):
+    # Simply a DFS algorithm
+    visited = set()
+    stack = [sink_index]
+
+    while stack:
+        current = stack.pop()
+
+        if current == hole_index:
+            return
+
+        if current in visited:
+            continue
+
+        visited.add(current)
+
+        for neighbor in graph[current]:
+            if neighbor not in visited:
+                stack.append(neighbor)
+
+    raise RuntimeError("No path exists between sink and hole.")
