@@ -74,15 +74,18 @@ def main():
         cspace, samples, graph, sink_index, hole_index = probabilistic_roadmap(map, RESOLUTION, sink, hole)
         route = a_star(graph, samples, sink_index, hole_index)
         view_configuration_space(map, cspace, samples, RESOLUTION, route)
-        print(grid_to_world(samples[0]))
+        print(samples)
+        print("sink ", sink)
+        print("hole ", hole)
         physical_points = [grid_to_world(sample) for sample in samples]
 
-        for point in physical_points:
-            future = robot.go_to(*point)
+        for point in route:
+            physical_point =physical_points[point]
+            future = robot.go_to(*physical_points[point])
             done = wait(future.done, 135)
             ok = (done and future.result().success and not collision and
-                  time.monotonic()-pose_time < 1 and math.hypot(pose.x-point[0],pose.y-point[1]) <= .03)
-            print(f'{"PASS" if ok else "FAIL"}: {point}', flush=True)
+                  time.monotonic()-pose_time < 1 and math.hypot(pose.x-physical_point[0],pose.y-physical_point[1]) <= .03)
+            print(f'{"PASS" if ok else "FAIL"}: {physical_point}', flush=True)
             if not ok:
                 if done: print(future.result().message)
                 return 1

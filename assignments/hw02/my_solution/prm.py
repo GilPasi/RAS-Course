@@ -78,9 +78,11 @@ def is_collision_free(p1, p2, configuration_space):
 
 def _connect_neighbors(samples, configuration_space, k=10):
     graph = {i: {} for i in range(len(samples))}
+    connected = 0
+    currently_tested = 0
 
     for i, q in enumerate(samples):
-
+        currently_tested = i
         distances = np.linalg.norm(
             samples - q, axis=1
         )
@@ -107,6 +109,11 @@ def _connect_neighbors(samples, configuration_space, k=10):
             if connected >= k:
                 break
 
+    if connected < k:
+        raise RuntimeError(
+            f"Vertex {currently_tested}: found only {connected} "
+            f"collision-free neighbors out of {k} required."
+        )
     return graph
 
 
