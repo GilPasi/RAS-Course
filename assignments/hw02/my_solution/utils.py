@@ -1,7 +1,8 @@
 import matplotlib.pyplot as plt
 
 
-def view_configuration_space(grid, cspace, samples=None, resolution=0.025):
+def view_configuration_space(grid, cspace, samples=None,
+                             resolution=0.025, path=None):
     height, width = grid.shape
 
     extent = (0, width * resolution,
@@ -49,6 +50,37 @@ def view_configuration_space(grid, cspace, samples=None, resolution=0.025):
             s=10,
             label='PRM samples'
         )
+
+        # Display A* path if available
+        if path is not None and len(path) > 0:
+            path_points = samples[path]
+
+            path_x = (path_points[:, 1] + 0.5) * resolution
+            path_y = (path_points[:, 0] + 0.5) * resolution
+
+            axes[1].plot(
+                path_x, path_y,
+                color='red',
+                linewidth=2,
+                label='A* path',
+                zorder=3
+            )
+
+            # Start point
+            axes[1].scatter(
+                path_x[0], path_y[0],
+                color='green', s=100,
+                label='Start', zorder=4
+            )
+
+            # Goal point
+            axes[1].scatter(
+                path_x[-1], path_y[-1],
+                color='orange', s=100,
+                marker='*',
+                label='Goal', zorder=4
+            )
+
         axes[1].legend()
 
     for ax in axes:

@@ -11,6 +11,7 @@ from std_msgs.msg import Bool
 from nav_msgs.msg import OccupancyGrid
 from hw02_sim.map_server import MAP_QOS
 from prm import probabilistic_roadmap
+from a_star import a_star
 from utils import view_configuration_space
 
 
@@ -71,7 +72,8 @@ def main():
         if math.hypot(pose.x-1, pose.y-3) > .10:
             print('FAIL: restart the simulation at its initial position'); return 1
         cspace, samples, graph, sink_index, hole_index = probabilistic_roadmap(map, RESOLUTION, sink, hole)
-        view_configuration_space(map, cspace, samples)
+        route = a_star(graph, samples, sink_index, hole_index)
+        view_configuration_space(map, cspace, samples, RESOLUTION, route)
 
 
         for label, target in [('outward movement', (1.1, 3.0)), ('return to start', (1.0, 3.0))]:
