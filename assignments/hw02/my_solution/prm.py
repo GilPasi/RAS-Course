@@ -1,14 +1,34 @@
 import numpy as np
 import math
 from scipy.ndimage import distance_transform_edt
+from geometry_msgs.msg import PoseStamped
 
-def probabilistic_roadmap(grid, resolution, n=300, k=10):
-    configuration_space= _build_configuration_space(grid, resolution)
-    samples = _sample_points(configuration_space, n)
-    graph = _connect_neighbors(samples, configuration_space, k)
-    
+def probabilistic_roadmap(grid, resolution, sink:PoseStamped, hole:PoseStamped, n=300, k=10):
+    cspace = _build_configuration_space(grid, resolution)
+    height, width = cspace.shape
 
-    return configuration_space, samples, graph
+    sink = _pose_to_grid(sink, resolution)
+    hole = _pose_to_grid(hole, resolution)
+
+    for point in (sink, hole):
+        row, col = point
+
+        if not (0 <= row < height and 0 <= col < width):
+            raise ValueError("Point is outside the map")
+
+        if cspace[row, col]:
+            raise ValueError("Point is inside an obstacle")
+
+    samples = _sample_points(cspace, n)
+
+    samples = np.vstack([sink, hole, samples])
+
+    sink_index = 0
+    hole_index = 1
+
+    graph = _connect_neighbors(samples, cspace, k)
+
+    return cspace, samples, graph, sink_index, hole_index
 
 def _build_configuration_space(grid, resolution):
     RADIUS = 0.3
@@ -88,3 +108,13 @@ def _connect_neighbors(samples, configuration_space, k=10):
                 break
 
     return graph
+
+
+def _pose_to_grid(pose_stamped, resolution, origin_x=0.0, origin_y=0.0):
+    x = pose_stamped.pose.position.x
+    y = pose_stamped.pose.position.y
+
+    col = math.floor((x - origin_x) / resolution)
+    row = math.floor((y - origin_y) / resolution)
+
+    return np.array([row, col], dtype=int)

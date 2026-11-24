@@ -10,7 +10,7 @@ from hw02_sim.robot_client import RobotClient
 from std_msgs.msg import Bool
 from nav_msgs.msg import OccupancyGrid
 from hw02_sim.map_server import MAP_QOS
-from prm import  _build_configuration_space, _sample_points
+from prm import probabilistic_roadmap
 from utils import view_configuration_space
 
 
@@ -70,8 +70,7 @@ def main():
         if not available: return 1
         if math.hypot(pose.x-1, pose.y-3) > .10:
             print('FAIL: restart the simulation at its initial position'); return 1
-        cspace = _build_configuration_space(map, RESOLUTION)
-        samples = _sample_points(cspace)
+        cspace, samples, graph, sink_index, hole_index = probabilistic_roadmap(map, RESOLUTION, sink, hole)
         view_configuration_space(map, cspace, samples)
 
 
