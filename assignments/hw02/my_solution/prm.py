@@ -7,8 +7,8 @@ def probabilistic_roadmap(grid, resolution, sink:PoseStamped, hole:PoseStamped, 
     cspace = _build_configuration_space(grid, resolution)
     height, width = cspace.shape
 
-    sink = _pose_to_grid(sink, resolution)
-    hole = _pose_to_grid(hole, resolution)
+    sink = pose_to_grid(sink, resolution)
+    hole = pose_to_grid(hole, resolution)
 
     for point in (sink, hole):
         row, col = point
@@ -110,7 +110,7 @@ def _connect_neighbors(samples, configuration_space, k=10):
     return graph
 
 
-def _pose_to_grid(pose_stamped, resolution, origin_x=0.0, origin_y=0.0):
+def pose_to_grid(pose_stamped, resolution, origin_x=0.0, origin_y=0.0):
     x = pose_stamped.pose.position.x
     y = pose_stamped.pose.position.y
 
@@ -118,3 +118,12 @@ def _pose_to_grid(pose_stamped, resolution, origin_x=0.0, origin_y=0.0):
     row = math.floor((y - origin_y) / resolution)
 
     return np.array([row, col], dtype=int)
+
+def grid_to_world(point, resolution=0.025,
+                  origin_x=0.0, origin_y=0.0):
+    row, col = point
+
+    x = origin_x + (col + 0.5) * resolution
+    y = origin_y + (row + 0.5) * resolution
+
+    return x, y
