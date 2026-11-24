@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 
 
-def view_configuration_space(grid, cspace, resolution=0.025):
+def view_configuration_space(grid, cspace, samples=None, resolution=0.025):
     height, width = grid.shape
 
     extent = (0, width * resolution,
@@ -37,6 +37,19 @@ def view_configuration_space(grid, cspace, resolution=0.025):
         vmax=1
     )
     axes[1].set_title('Configuration Space')
+
+    # Display PRM samples
+    if samples is not None and len(samples) > 0:
+        x = (samples[:, 1] + 0.5) * resolution
+        y = (samples[:, 0] + 0.5) * resolution
+
+        axes[1].scatter(
+            x, y,
+            color='blue',
+            s=10,
+            label='PRM samples'
+        )
+        axes[1].legend()
 
     for ax in axes:
         ax.set_xlabel('X (m)')

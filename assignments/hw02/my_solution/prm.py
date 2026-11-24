@@ -43,8 +43,13 @@ def is_collision_free(p1, p2, configuration_space):
 
     points = np.linspace(p1, p2, num_steps)
 
+    height, width = configuration_space.shape
+
     for point in points:
         row, col = np.round(point).astype(int)
+
+        if not (0 <= row < height and 0 <= col < width): #Assert point in bounds
+            return False
 
         if configuration_space[row, col]:
             return False

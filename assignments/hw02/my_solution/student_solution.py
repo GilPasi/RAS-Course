@@ -10,7 +10,7 @@ from hw02_sim.robot_client import RobotClient
 from std_msgs.msg import Bool
 from nav_msgs.msg import OccupancyGrid
 from hw02_sim.map_server import MAP_QOS
-from prm import  _build_configuration_space
+from prm import  _build_configuration_space, _sample_points
 from utils import view_configuration_space
 
 
@@ -71,7 +71,9 @@ def main():
         if math.hypot(pose.x-1, pose.y-3) > .10:
             print('FAIL: restart the simulation at its initial position'); return 1
         cspace = _build_configuration_space(map, RESOLUTION)
-        view_configuration_space(map, cspace)
+        samples = _sample_points(cspace)
+        view_configuration_space(map, cspace, samples)
+
 
         for label, target in [('outward movement', (1.1, 3.0)), ('return to start', (1.0, 3.0))]:
             # Each call moves directly to ONE point. Keep spinning for its result.
