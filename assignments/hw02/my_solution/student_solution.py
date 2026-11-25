@@ -128,6 +128,9 @@ def main():
     rclpy.init()
     node = rclpy.create_node('hw02_solution')
     robot = RobotClient(node)
+    node.set_parameters([ #Use simulated seconds
+        rclpy.Parameter('use_sim_time', rclpy.Parameter.Type.BOOL, True)
+    ])
 
     pose, pose_time = None, 0.0
     contact_time, collision = 0.0, False
@@ -139,6 +142,17 @@ def main():
     hole: PoseStamped | None = None
     grid: np.ndarray | None = None
     raw_map_msg: OccupancyGrid | None = None
+
+    def wait_simulated(seconds):
+        start = node.get_clock().now()
+
+        while rclpy.ok():
+            rclpy.spin_once(node, timeout_sec=0.05)
+
+            elapsed = node.get_clock().now() - start
+
+            if elapsed.nanoseconds >= seconds * 1e9:
+                return
 
     # Publishers
     cspace_pub = node.create_publisher(
@@ -273,13 +287,19 @@ def main():
 
             if route is None or len(route) == 0:
                 publish_status(status_pub, 'no_path_found')
-                print("No path found")
+                wait_simulated(3.0)
                 return 2
-
+            
+            publish_status(status_pub, 'path_found')
+        except RuntimeError as ex:
+            publish_status(status_pub, 'no_path_found')
+            print(f"[ERROR]: {ex}")
+            return 2
         except (RuntimeError, ValueError) as ex:
             publish_status(status_pub, 'failed')
             print(f"[ERROR]: {ex}")
-            return 2
+            return 3
+
 
         # Convert grid coordinates to physical coordinates
         origin = raw_map_msg.info.origin.position
@@ -340,7 +360,7 @@ def main():
 
                 return 1
 
-        publish_status(status_pub, 'success')
+        publish_status(status_pub, 'completed')
         return 0
 
     except (KeyboardInterrupt,
