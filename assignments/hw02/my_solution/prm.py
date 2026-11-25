@@ -3,7 +3,37 @@ import math
 from scipy.ndimage import distance_transform_edt
 from geometry_msgs.msg import PoseStamped
 
-def probabilistic_roadmap(grid, resolution, sink:PoseStamped, hole:PoseStamped, n=300, k=10):
+def probabilistic_roadmap(
+        grid,
+        resolution: float,
+        sink: PoseStamped,
+        hole: PoseStamped,
+        n=300,
+        k=10,
+        retries=3):
+
+    for i in range(retries):
+        try:
+            return _probabilistic_roadmap(
+                grid,
+                resolution,
+                sink,
+                hole,
+                n=n + i * 100,
+                k=k
+            )
+
+        except RuntimeError as ex:
+            print(f"[WARNING] Attempt {i + 1}/{retries} failed: {ex}")
+
+            if i == retries - 1:
+                raise RuntimeError(
+                    f"PRM failed after {retries} attempts."
+                ) from ex
+
+
+
+def _probabilistic_roadmap(grid, resolution, sink:PoseStamped, hole:PoseStamped, n=300, k=10):
     cspace = _build_configuration_space(grid, resolution)
     height, width = cspace.shape
 
